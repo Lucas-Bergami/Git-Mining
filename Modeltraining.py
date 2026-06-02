@@ -26,9 +26,9 @@ from sklearn.metrics import (
 # CONFIGURAÇÕES
 # =========================================================
 
-INPUT_CSV = "data/processed/user_repo_dataset.csv"
+INPUT_CSV = "./user_repo_dataset_with_text_similarity.csv"
 
-OUTPUT_DIR = "data/models"
+OUTPUT_DIR = "result"
 
 PLOTS_DIR = f"{OUTPUT_DIR}/plots"
 

@@ -111,3 +111,7 @@ temp/
 
 *.swp
 *.swo
+*.csv
+result/
+data/
+analysis
