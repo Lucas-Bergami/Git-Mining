@@ -1,29 +1,3 @@
-"""
-Treina um classificador para prever se um usuário contribui em um repositório,
-usando exatamente as mesmas features que o recomendar.py calcula
-(Recommender.build_feature_matrix), para garantir consistência entre
-treino e inferência.
-
-Rótulos:
-  - positivo (1): pares (usuário, repo) presentes em edges_contributes.csv
-  - negativo (0): repositórios sorteados, em duas categorias:
-      * "difíceis": repositórios de pessoas que o usuário segue mas em que
-        nunca contribuiu — testam se o modelo aprende mais do que só
-        "esse repo é de alguém famoso"
-      * "fáceis": repositórios sorteados aleatoriamente do restante da base
-
-Divisão treino/teste por usuário (GroupShuffleSplit): nenhum usuário aparece
-nos dois conjuntos ao mesmo tempo, para evitar que o modelo "memorize"
-características de um usuário específico em vez de aprender o padrão geral.
-
-Modelo: XGBoost (gradient boosting em árvores), com regressão logística como
-baseline de comparação. Se o xgboost não estiver instalado, cai para
-RandomForest automaticamente.
-
-Uso:
-    python treinar_modelo.py --neg_por_positivo 4 --saida data/model/contrib_model.joblib
-"""
-
 import os
 import argparse
 import numpy as np
@@ -181,7 +155,7 @@ def main():
         scale_pos_weight = (y_train == 0).sum() / max((y_train == 1).sum(), 1)
         model = XGBClassifier(
             n_estimators=200,
-            max_depth=4,
+            max_depth=5,
             learning_rate=0.05,
             scale_pos_weight=scale_pos_weight,
             eval_metric="logloss",

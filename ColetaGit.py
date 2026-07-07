@@ -1,28 +1,3 @@
-"""
-Coleta de usuários, repositórios e grafo de relações da API do GitHub.
-
-Fases:
-  1) DESCOBERTA: faz um BFS (busca em largura) a partir de SEED_USERS,
-     seguindo a relação "segue", até atingir MAX_USERS usuários descobertos.
-     Cada passo grava as arestas de "segue" no checkpoint.
-  2) ENRIQUECIMENTO: para cada usuário descoberto, busca seus dados de perfil,
-     até MAX_REPOS_PER_USER repositórios, README de perfil e dos repositórios,
-     e os contribuidores de cada repositório (até MAX_CONTRIBUTORS_PER_REPO).
-     Gera duas tabelas (usuários, repositórios) e três listas de arestas:
-       - segue:       usuário -> usuário
-       - possui:      usuário -> repositório (é o dono)
-       - contribui:   usuário -> repositório (aparece em /contributors)
-  3) GRAFO: monta um grafo dirigido (networkx) a partir das tabelas e arestas
-     salvas, e exporta para GraphML.
-
-Tudo é salvo incrementalmente em data/checkpoints/. Se o rate limit for
-atingido, o script encerra com segurança e pode ser executado de novo:
-ele retoma exatamente da fila/usuário onde parou.
-
-Requisitos: pip install requests pandas python-dotenv networkx
-Arquivo .env na mesma pasta com: GITHUB_TOKEN=seu_token_aqui
-"""
-
 import os
 import json
 import time
@@ -45,7 +20,7 @@ HEADERS = {
 
 SEED_USERS = ["torvalds", "karpathy", "tensorflow", "pytorch", "huggingface"]
 
-MAX_USERS = 2000  # total de usuários distintos a descobrir/coletar
+MAX_USERS = 1000  # total de usuários distintos a descobrir/coletar
 FOLLOWERS_PER_USER = 25  # quantos seguidores buscar ao expandir cada usuário no BFS
 MAX_REPOS_PER_USER = 5  # quantos repositórios coletar por usuário
 MAX_CONTRIBUTORS_PER_REPO = (
@@ -166,7 +141,6 @@ def save_state(state):
 
 
 def append_rows(rows, path):
-    """Acrescenta linhas a um CSV de checkpoint (modo append, escreve header só uma vez)."""
     if not rows:
         return
     df = pd.DataFrame(rows)
@@ -546,9 +520,6 @@ def export_final_tables():
     print(f"\nTabelas finais exportadas para {DATA_DIR}/")
 
 
-# =========================================================
-# MAIN
-# =========================================================
 def main():
     state = load_state()
     try:

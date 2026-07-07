@@ -1,40 +1,3 @@
-"""
-Recomendador: dado um usuário A e uma lista de repositórios candidatos,
-devolve os top_K repositórios mais recomendados.
-
-Como ainda não há um modelo treinado, o score é uma combinação heurística
-(ponderada) de features tabulares, textuais (TF-IDF) e de grafo. A função
-`build_feature_matrix()` devolve as features "cruas" por par (usuário, repo)
-— essa matriz pode ser reaproveitada depois para treinar/alimentar um
-classificador real, bastando substituir a combinação heurística por
-`model.predict_proba(X)`.
-
-Observação sobre o grafo: aqui ele é remontado a partir das tabelas de
-arestas (edges_follow / edges_owns / edges_contributes) usando um
-MultiDiGraph, em vez do DiGraph simples do script de coleta. Isso evita
-perder informação quando o mesmo par (usuário, repo) tem mais de uma
-relação — por exemplo, alguém que é dono E aparece como contribuidor do
-próprio repositório, caso bem comum.
-
-Features usadas:
-  - text_similarity:               cosseno entre TF-IDF do README de perfil do usuário
-                                    e do README do repositório
-  - language_match:                Jaccard entre linguagens do usuário e do repositório
-  - follows_owner:                 usuário segue o dono do repositório?
-  - common_contributors_following: quantos contribuidores do repo o usuário já segue
-  - shared_repos_with_owner:       em quantos outros repos usuário e dono já
-                                    apareceram juntos (contribuição/posse)
-  - graph_proximity:               1 / (1 + distância) entre usuário e repo no grafo
-  - repo_popularity:               log(estrelas + forks + watchers) do repositório
-
-Uso via linha de comando:
-    python recomendar.py --usuario torvalds --top_k 10
-    python recomendar.py --usuario torvalds --repos "owner/repo1,owner/repo2"
-    python recomendar.py --usuario torvalds --repos_file candidatos.txt
-
-Requisitos: pip install pandas numpy networkx scikit-learn
-"""
-
 import os
 import argparse
 import numpy as np
@@ -45,8 +8,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 DATA_DIR = "data/raw"
-USERS_CSV = f"{DATA_DIR}/users.csv"
-REPOS_CSV = f"{DATA_DIR}/repos.csv"
+USERS_CSV = f"{DATA_DIR}/users_data.csv"
+REPOS_CSV = f"{DATA_DIR}/repos_data.csv"
 
 # Pesos do score heurístico — ajuste à mão ou, melhor ainda, substitua o
 # método `recommend()` por um modelo treinado usando build_feature_matrix().
@@ -58,6 +21,40 @@ WEIGHTS = {
     "shared_repos_with_owner": 0.10,
     "graph_proximity": 0.15,
     "repo_popularity": 0.10,
+    "user_followers": 0.0,
+    "user_following": 0.0,
+    "user_public_repos": 0.0,
+    "user_total_stars_received": 0.0,
+    "user_total_forks_owned": 0.0,
+    "user_total_watchers": 0.0,
+    "user_total_open_issues": 0.0,
+    "user_num_languages": 0.0,
+    "user_bio_length": 0.0,
+    "user_has_company": 0.0,
+    "user_has_blog": 0.0,
+    "user_has_twitter": 0.0,
+    "user_has_readme_profile": 0.0,
+    "user_hireable": 0.0,
+    "user_is_site_admin": 0.0,
+    "user_push_events": 0.0,
+    "user_pr_events": 0.0,
+    "user_issue_events": 0.0,
+    "user_fork_events": 0.0,
+    "user_watch_events": 0.0,
+    "user_create_events": 0.0,
+    "user_comment_events": 0.0,
+    "user_total_recent_events": 0.0,
+    "user_starred_repos_count": 0.0,
+    "user_watching_repos_count": 0.0,
+    "user_account_age_days": 0.0,
+    "repo_stars": 0.0,
+    "repo_forks": 0.0,
+    "repo_watchers": 0.0,
+    "repo_open_issues": 0.0,
+    "repo_size_kb": 0.0,
+    "repo_is_fork": 0.0,
+    "repo_archived": 0.0,
+    "repo_has_readme": 0.0,
 }
 
 # Mesma ordem de colunas usada para treinar (treinar_modelo.py) e para servir o modelo aqui.
@@ -87,8 +84,8 @@ def _jaccard(a, b):
 
 class Recommender:
     def __init__(self, data_dir=DATA_DIR):
-        self.users_df = pd.read_csv(f"{data_dir}/users.csv")
-        self.repos_df = pd.read_csv(f"{data_dir}/repos.csv")
+        self.users_df = pd.read_csv(f"{data_dir}/users_data.csv")
+        self.repos_df = pd.read_csv(f"{data_dir}/repos_data.csv")
         self.follow_df = self._read_or_empty(
             f"{data_dir}/edges_follow.csv", ["follower", "followed"]
         )
@@ -236,14 +233,6 @@ class Recommender:
 
     # ---------- API pública ----------
     def build_feature_matrix(self, username, candidate_repos, unlink_repos=None):
-        """Features cruas (não normalizadas) por par (usuário, repo).
-        Reaproveitável para treinar/alimentar um modelo de ML no futuro.
-
-        `unlink_repos`: conjunto opcional de repositórios para os quais a
-        aresta 'contribui' (usuário -> repo) deve ser removida do grafo antes
-        de calcular graph_proximity. Usado durante a montagem da tabela de
-        treino, para não deixar a própria aresta que está sendo rotulada
-        vazar como feature (veja treinar_modelo.py)."""
         if username not in self.users_df.index:
             raise ValueError(f"Usuário '{username}' não encontrado em {USERS_CSV}.")
 
@@ -279,28 +268,71 @@ class Recommender:
             else {}
         )
 
+        def _get_val(row, col):
+            val = row.get(col, 0)
+            return 0.0 if pd.isna(val) else float(val)
+
+        user_row = self.users_df.loc[username]
+        user_feats = {
+            "user_followers": _get_val(user_row, "followers"),
+            "user_following": _get_val(user_row, "following"),
+            "user_public_repos": _get_val(user_row, "public_repos"),
+            "user_total_stars_received": _get_val(user_row, "total_stars_received"),
+            "user_total_forks_owned": _get_val(user_row, "total_forks_owned"),
+            "user_total_watchers": _get_val(user_row, "total_watchers"),
+            "user_total_open_issues": _get_val(user_row, "total_open_issues"),
+            "user_num_languages": _get_val(user_row, "num_languages"),
+            "user_bio_length": _get_val(user_row, "bio_length"),
+            "user_has_company": _get_val(user_row, "has_company"),
+            "user_has_blog": _get_val(user_row, "has_blog"),
+            "user_has_twitter": _get_val(user_row, "has_twitter"),
+            "user_has_readme_profile": _get_val(user_row, "has_readme_profile"),
+            "user_hireable": _get_val(user_row, "hireable"),
+            "user_is_site_admin": _get_val(user_row, "is_site_admin"),
+            "user_push_events": _get_val(user_row, "push_events"),
+            "user_pr_events": _get_val(user_row, "pr_events"),
+            "user_issue_events": _get_val(user_row, "issue_events"),
+            "user_fork_events": _get_val(user_row, "fork_events"),
+            "user_watch_events": _get_val(user_row, "watch_events"),
+            "user_create_events": _get_val(user_row, "create_events"),
+            "user_comment_events": _get_val(user_row, "comment_events"),
+            "user_total_recent_events": _get_val(user_row, "total_recent_events"),
+            "user_starred_repos_count": _get_val(user_row, "starred_repos_count"),
+            "user_watching_repos_count": _get_val(user_row, "watching_repos_count"),
+            "user_account_age_days": _get_val(user_row, "account_age_days"),
+        }
+
         rows = []
         for repo in valid_repos:
-            rows.append(
-                {
-                    "username": username,
-                    "repo": repo,
-                    "text_similarity": self._text_similarity(username, repo),
-                    "language_match": self._language_match(username, repo),
-                    "follows_owner": self._follows_owner(username, repo),
-                    "common_contributors_following": self._common_contributors_following(
-                        username, repo
-                    ),
-                    "shared_repos_with_owner": self._shared_repos_with_owner(
-                        username, repo
-                    ),
-                    "graph_proximity": self._graph_proximity(distances, repo),
-                    "repo_popularity": self._repo_popularity(repo),
-                    "already_participates": int(
-                        repo in self.user_repos.get(username, set())
-                    ),
-                }
-            )
+            repo_row = self.repos_df.loc[repo]
+            base_dict = {
+                "username": username,
+                "repo": repo,
+                "text_similarity": self._text_similarity(username, repo),
+                "language_match": self._language_match(username, repo),
+                "follows_owner": self._follows_owner(username, repo),
+                "common_contributors_following": self._common_contributors_following(
+                    username, repo
+                ),
+                "shared_repos_with_owner": self._shared_repos_with_owner(
+                    username, repo
+                ),
+                "graph_proximity": self._graph_proximity(distances, repo),
+                "repo_popularity": self._repo_popularity(repo),
+                "already_participates": int(
+                    repo in self.user_repos.get(username, set())
+                ),
+                "repo_stars": _get_val(repo_row, "stars"),
+                "repo_forks": _get_val(repo_row, "forks"),
+                "repo_watchers": _get_val(repo_row, "watchers"),
+                "repo_open_issues": _get_val(repo_row, "open_issues"),
+                "repo_size_kb": _get_val(repo_row, "size_kb"),
+                "repo_is_fork": _get_val(repo_row, "is_fork"),
+                "repo_archived": _get_val(repo_row, "archived"),
+                "repo_has_readme": _get_val(repo_row, "has_readme"),
+            }
+            base_dict.update(user_feats)
+            rows.append(base_dict)
         return pd.DataFrame(rows)
 
     def recommend(
